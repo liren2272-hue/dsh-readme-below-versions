@@ -1,0 +1,30 @@
+{
+  "name": "@local/dsh-readme-below-versions",
+  "version": "1.0.0",
+  "icon": "./icon.svg",
+  "private": true,
+  "type": "module",
+  "description": "在 DSH 插件页把组合包的详细介绍文档（README）从页面顶部移到「更新 / 版本」区块下方。只装饰 DOM（flex order），不移动节点、不改动任何已装包。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "selftest.mjs"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
