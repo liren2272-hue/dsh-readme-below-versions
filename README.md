@@ -1,6 +1,7 @@
 # @local/dsh-readme-below-versions
 
-把 DSH 插件页里**组合包的详细介绍文档（README）**从页面顶部挪到**「更新 / 版本」区块下方**。
+把 DSH 插件页里**组合包的详细介绍文档（README）**从页面顶部挪到**「更新 / 版本」区块下方**；
+对没有更新栏的本地 `@local/*` 包，则挪到页面最后一个自有区块（来源）下方。
 
 ## 为什么是插件而不是改 DSH
 
@@ -25,10 +26,13 @@ README 就在第 1 位，更新栏在第 4 位，所以用户看到的是「READ
 
 ## 行为
 
-- README 的 `order` 设为 `1`，更新栏之后的所有兄弟块（来源、扩展槽）设为 `2`
+- README 的 `order` 设为 `1`，锚点之后的所有兄弟块（来源、扩展槽）设为 `2`
   → 视觉顺序变成：`[配置][行列表][更新/版本][README][来源][扩展槽]`
-- 只在同时存在 `[data-plugin-detail]`（组合包详情页）和 `[data-plugin-versions]`
-  （可更新、因而才有更新栏）时生效；没有 README 或没有更新栏的页面完全不动。
+- 锚点优先取 `[data-plugin-versions]`（更新栏）。**没有更新栏时回退**：取页面
+  最后一个自有区块（本地包通常是 `data-plugin-source` 来源块）作为锚点，
+  README 依然落到它下方 → 本地 `@local/*` link 包同样生效。
+- 只在同时存在 `[data-plugin-detail]`（组合包详情页）和至少一个自有区块时生效；
+  没有 README 的页面完全不动。
 - 组件重建由 `MutationObserver` 重新断言，另有 3 秒轮询兜底。
 - 不读取任何 Cordis 服务（`inject: []`），不会触发 `cannot get property … without inject`。
 
@@ -38,5 +42,6 @@ README 就在第 1 位，更新栏在第 4 位，所以用户看到的是「READ
 "$HOME/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe" selftest.mjs
 ```
 
-用假 DOM 覆盖：正常换位、无 README、无更新栏、README 已在下方、以及
-`apply`/`dispose` 的样式写入与清理。
+用假 DOM 覆盖：正常换位、无 README、无更新栏、README 已在下方、本地包
+（无更新栏、锚点回退到来源）、`lastPageSection`/`SECTION_SELECTOR` 断言，
+以及 `apply`/`dispose` 的样式写入与清理。

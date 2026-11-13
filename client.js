@@ -12,7 +12,7 @@
    * The DSH plugin page (`@deepseek-ai/dsh-client-ui-plugin-manager`) renders a
    * package's detail document — its README — as the FIRST child of the page's
    * `detailSections` column, while the 更新 / 版本 block
-   * (`section[data-plugin-versions]`, client.js:4733) is the fourth:
+   * (`section[data-plugin-versions], client.js:4733`) is the fourth:
    *
    *   [README][bundle config][rows][versions][source][plugins.detail.section]
    *
@@ -24,6 +24,14 @@
    * immediately under 更新 / 版本 without moving a single node — React's
    * reconciliation never sees an unexpected child position. `.detailSections` is
    * `display:flex; flex-direction:column`, so `order` alone decides paint order.
+   *
+   * 2026-11-13: `[data-plugin-versions]` only renders for registry-updatable
+   * bundles (`pkg.update === 'registry'`); a local `@local/*` link package has no
+   * update block, so the versions selector finds nothing and the old code skipped
+   * the page. The anchor now falls back to the LAST page section that does exist
+   * (usually `data-plugin-source`), so the README still moves off the top on
+   * local-package pages. The versions block stays the preferred anchor, so
+   * registry-package behaviour is unchanged.
    *
    * A MutationObserver (plus a slow interval as a safety net) re-asserts the
    * styles whenever React re-creates the page, and the cleanup returned from
@@ -46,6 +54,8 @@
     'data-plugin-versions',
     'data-plugin-source',
   ]
+  /** Selector matching any of the page's own section blocks. */
+  const SECTION_SELECTOR = SECTION_MARKERS.map((marker) => `[${marker}]`).join(',')
   /** The README paints right below the versions block; what followed it moves one slot down. */
   const README_ORDER = '1'
   const TAIL_ORDER = '2'
@@ -56,25 +66,44 @@
   }
 
   /**
+   * The last section the plugin manager renders itself on a detail page —
+   * `data-plugin-source` (来源) is last for a local package, since the versions
+   * block is absent. Used as the reorder anchor when no `[data-plugin-versions]`
+   * block exists.
+   */
+  function lastPageSection(children) {
+    for (let i = children.length - 1; i >= 0; i -= 1) {
+      if (isSection(children[i])) return children[i]
+    }
+    return null
+  }
+
+  /**
    * Which flex children need which `order`, given a page's `detailSections`
    * children and its versions block. Pure: it reads elements, never writes them.
    *
+   * The anchor is the versions block when present; when absent (a local package
+   * with no update block) it falls back to the last page section that exists,
+   * so the README still paints below the page's own sections.
+   *
    * @param children - the container's element children, in DOM order.
-   * @param version - the `[data-plugin-versions]` block on the same page.
-   * @returns the pairs to apply; empty when the page has no README, no versions
-   *   block, or already shows the README below it.
+   * @param version - the `[data-plugin-versions]` block on the same page, or null.
+   * @returns the pairs to apply; empty when the page has no README, no anchor
+   *   section, or already shows the README below the anchor.
    */
   function planReorder(children, version) {
     if (children.length === 0) return []
     const readme = children[0]
     // No document on this page: the first child is one of the page's own blocks.
     if (readme === version || isSection(readme)) return []
+    const anchor = version !== null && version !== undefined ? version : lastPageSection(children)
+    if (anchor === null || anchor === undefined) return []
     const readmeAt = children.indexOf(readme)
-    const versionAt = children.indexOf(version)
-    // Not the same container, or already below the versions block.
-    if (readmeAt < 0 || versionAt < 0 || readmeAt > versionAt) return []
+    const anchorAt = children.indexOf(anchor)
+    // Not the same container, or already below the anchor section.
+    if (readmeAt < 0 || anchorAt < 0 || readmeAt > anchorAt) return []
     const plan = [{ el: readme, order: README_ORDER }]
-    for (let i = versionAt + 1; i < children.length; i += 1) {
+    for (let i = anchorAt + 1; i < children.length; i += 1) {
       plan.push({ el: children[i], order: TAIL_ORDER })
     }
     return plan
@@ -96,12 +125,22 @@
       let disposed = false
       let pending = false
 
+      /**
+       * The `.detailSections` container of a detail page. It is the parent of the
+       * page's own section blocks (and of the README); since the README carries no
+       * marker, we locate it as the parent of the first section block found.
+       */
+      function resolveContainer(page) {
+        const section = page.querySelector(SECTION_SELECTOR)
+        return section === null ? null : section.parentElement
+      }
+
       /** Re-assert the order on every package page currently open. */
       function sweep() {
         if (disposed || typeof document === 'undefined') return
         for (const page of document.querySelectorAll(PAGE_SELECTOR)) {
           const version = page.querySelector(VERSION_SELECTOR)
-          const container = version === null ? null : version.parentElement
+          const container = version === null ? resolveContainer(page) : version.parentElement
           if (container === null) continue
           for (const { el, order } of planReorder(Array.from(container.children), version)) {
             applyOrder(el, order)
@@ -168,9 +207,11 @@
           PAGE_SELECTOR,
           VERSION_SELECTOR,
           SECTION_MARKERS,
+          SECTION_SELECTOR,
           README_ORDER,
           TAIL_ORDER,
           isSection,
+          lastPageSection,
           planReorder,
           applyOrder,
           restore,

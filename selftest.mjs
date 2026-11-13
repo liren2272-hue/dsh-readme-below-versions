@@ -18,7 +18,7 @@ assert.equal(loaded.length, 1, 'the client half must register exactly one module
 assert.equal(loaded[0].id, '@local/dsh-readme-below-versions')
 
 const internals = loaded[0].factory().internals
-const { FLAG, PAGE_SELECTOR, VERSION_SELECTOR, planReorder, applyOrder, restore, sweep } = internals
+const { FLAG, PAGE_SELECTOR, VERSION_SELECTOR, SECTION_MARKERS, SECTION_SELECTOR, planReorder, lastPageSection, applyOrder, restore, sweep } = internals
 
 /** A minimal element: attributes, style.setProperty/removeProperty, children. */
 function el(attrs = {}) {
@@ -77,6 +77,34 @@ const orders = (els) => els.map((e) => e.style.order || '0')
   const readme = el()
   assert.deepEqual(planReorder([readme], undefined), [])
 }
+// No versions block, but the page has its own sections -> the anchor falls back
+// to the LAST section (来源), and the README still paints below it.
+{
+  const readme = el()
+  const config = el({ 'data-plugin-config': true })
+  const rows = el({ 'data-plugin-rows': true })
+  const source = el({ 'data-plugin-source': true })
+  assert.deepEqual(
+    planReorder([readme, config, rows, source], null).map((p) => [0, p.order]).map(([, order]) => order),
+    ['1'],
+    'README moves below the last page section when there is no versions block',
+  )
+  // And it leaves the sections after the anchor untouched (none here).
+  assert.deepEqual(
+    planReorder([readme, config, rows, source], null).map((p) => p.el),
+    [readme],
+    'only the README is flagged when the anchor is the last section',
+  )
+}
+// lastPageSection picks the last marked child, skipping the README.
+{
+  const readme = el()
+  const source = el({ 'data-plugin-source': true })
+  assert.equal(lastPageSection([readme, source]), source, 'anchor falls back to the last section')
+  assert.equal(lastPageSection([readme]), null, 'a page with no sections has no anchor')
+}
+// SECTION_SELECTOR matches every page section and is a valid selector list.
+assert.ok(SECTION_MARKERS.every((m) => SECTION_SELECTOR.includes(`[${m}]`)), 'the section selector lists all markers')
 // Already below the versions block -> idempotent, no work.
 {
   const versions = el({ 'data-plugin-versions': true })
@@ -126,6 +154,38 @@ assert.deepEqual(orders(children), ['1', '0', '2'])
   globalThis.document.querySelectorAll = saved
   assert.equal(other.style.order, '', 'nothing to move on a page without a README')
 }
+
+  // A local-package page (no versions block) still moves the README below the
+  // last page section, via the anchor fallback.
+  {
+    const localReadme = el()
+    const localConfig = el({ 'data-plugin-config': true })
+    const localSource = el({ 'data-plugin-source': true })
+    const localChildren = [localReadme, localConfig, localSource]
+    const localContainer = { children: localChildren, parentElement: null }
+    localConfig.parentElement = localContainer
+    localSource.parentElement = localContainer
+    const localPage = {
+      querySelector: (sel) => {
+        if (sel === VERSION_SELECTOR) return null
+        if (sel === SECTION_SELECTOR) return localConfig
+        return null
+      },
+    }
+    const savedQuery = globalThis.document.querySelectorAll
+    globalThis.document.querySelectorAll = (sel) => {
+      if (sel === PAGE_SELECTOR) return [localPage]
+      if (sel === `[${FLAG}]`) return localChildren.filter((e) => e.hasAttribute(FLAG))
+      throw new Error(`unexpected selector ${sel}`)
+    }
+    sweep()
+    globalThis.document.querySelectorAll = savedQuery
+    assert.deepEqual(
+      orders(localChildren),
+      ['1', '0', '0'],
+      'README paints below the last page section on a local-package page',
+    )
+  }
 
 applyOrder(versions, '2')
 assert.equal(versions.style.order, '2')
